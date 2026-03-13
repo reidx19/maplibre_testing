@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"/>
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
+
+<style>
+body { margin:0; }
+#map { height:100vh; width:100vw; }
+
+/* Layer control panel */
+#layer-control{
+  position:absolute;
+  top:10px;
+  left:10px;
+  background:white;
+  padding:10px;
+  border-radius:6px;
+  font-family:sans-serif;
+  box-shadow:0 0 5px rgba(0,0,0,0.3);
+}
+
+#layer-control label{
+  display:block;
+  margin-bottom:4px;
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="layer-control">
+  <b>Layers</b><br>
+  <label><input type="checkbox" data-layer="origin_weighted_impedance_change" checked> Impedance Change</label>
+  <label><input type="checkbox" data-layer="impedance_contribution" checked> Impedance Contribution</label>
+  <label><input type="checkbox" data-layer="improvements" checked> Improvements</label>
+  <label><input type="checkbox" data-layer="current_network" checked> Current Network</label>
+</div>
+
+<script>
+
+// Register PMTiles protocol
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol("pmtiles", protocol.tile);
+
+// Initialize MapLibre map
+const map = new maplibregl.Map({
+  container: "map",
+  center: [-84.3658, 33.7624],
+  zoom: 14,
+  style: {
+    version: 8,
+    sources: {
+      // osm: {
+      //   type: "raster",
+      //   tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      //   tileSize: 256
+      // },
+      carto: {
+        type: "raster",
+        tiles: [
+          "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+          "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+          "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+          "https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+        ],
+        tileSize: 256,
+        attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+      },
+      current_network_tiles: {
+        type: "vector",
+        url: "pmtiles://current_network.pmtiles"
+      },
+      impedance_contribution_tiles: {
+        type: "vector",
+        url: "pmtiles://impedance_contribution.pmtiles"
+      },
+      improvements_tiles: {
+        type: "vector",
+        url: "pmtiles://improvements.pmtiles"
+      },
+      origin_weighted_impedance_change_tiles: {
+        type: "vector",
+        url: "pmtiles://origin_weighted_impedance_change.pmtiles"
+      },
+    },
+
+    layers: [
+      // { id: "osm", type: "raster", source: "osm" },
+      { id: "carto", type: "raster", source: "carto" },
+      
+      {
+        id: "origin_weighted_impedance_change",
+        type: "fill",
+        source: "origin_weighted_impedance_change_tiles",
+        "source-layer": "origin_weighted_impedance_change",
+        paint: { "fill-color": "#FF6600", "fill-opacity": 0.3 }
+      },
+      
+      {
+        id: "impedance_contribution",
+        type: "line",
+        source: "impedance_contribution_tiles",
+        "source-layer": "impedance_contribution",
+        paint: {
+          "line-color": "#0000FF",
+          "line-width": 0.5
+        }
+      },
+      
+      {
+        id: "improvements",
+        type: "line",
+        source: "improvements_tiles",
+        "source-layer": "improvements",
+        paint: {
+          "line-color": "#00AA00",
+          "line-width": 1.5
+        },
+      },
+        
+      {
+        id: "current_network",
+        type: "line",
+        source: "current_network_tiles",
+        "source-layer": "current_network",
+        paint: { "line-color": "#000000", "line-width": 0.5 }
+      }
+
+    ]
+  }
+});
+
+
+// --------------------
+// Layer Toggle Control
+// --------------------
+
+const layerControl = document.getElementById("layer-control");
+
+layerControl.addEventListener("change", (e) => {
+
+  if (!e.target.dataset.layer) return;
+
+  const layerId = e.target.dataset.layer;
+
+  const visibility = e.target.checked ? "visible" : "none";
+
+  map.setLayoutProperty(layerId, "visibility", visibility);
+
+});
+
+
+// --------------------
+// Popups
+// --------------------
+
+map.on("click", "origin_weighted_impedance_change", (e) => {
+  const props = e.features[0].properties;
+  new maplibregl.Popup()
+    .setLngLat(e.lngLat)
+    .setHTML(
+      `<b>TAZ:</b> ${props.tazid}<br>` +
+      `<b>Impedance Change:</b> ${props.impedance_change}<br>` +
+      `<b>FID:</b> ${props.fid}`
+    )
+    .addTo(map);
+});
+
+map.on("click", "current_network", (e) => {
+  const props = e.features[0].properties;
+  new maplibregl.Popup()
+    .setLngLat(e.lngLat)
+    .setHTML(
+      `<b>Link ID:</b> ${props.linkid}<br>` +
+      `<b>Travel Time (min):</b> ${props.travel_time_min}<br>`
+    )
+    .addTo(map);
+});
+
+</script>
+
+</body>
+</html>
