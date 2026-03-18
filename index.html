@@ -2,185 +2,329 @@
 <html>
 <head>
 <meta charset="utf-8">
+
 <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"/>
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
 
 <style>
-body { margin:0; }
-#map { height:100vh; width:100vw; }
+body {
+  margin:0;
+  display:flex;
+  height:100vh;
+  overflow:hidden;
+  font-family:sans-serif;
+}
 
-/* Layer control panel */
-#layer-control{
+/* SIDEBAR */
+#sidebar {
+  width:260px;
+  background:white;
+  box-shadow:2px 0 5px rgba(0,0,0,0.2);
+  padding:10px;
+  transition:width 0.3s;
+  overflow:hidden;
+}
+
+#sidebar.collapsed {
+  width:0;
+  padding:0;
+}
+
+/* MAP */
+#map {
+  flex:1;
+}
+
+/* Toggle button */
+#toggle-btn {
   position:absolute;
   top:10px;
+  left:260px;
+  z-index:20;
+  background:white;
+  border:none;
+  padding:6px 10px;
+  border-radius:4px;
+  cursor:pointer;
+  box-shadow:0 0 5px rgba(0,0,0,0.3);
+  transition:left 0.3s;
+}
+
+#sidebar.collapsed + #toggle-btn {
   left:10px;
+}
+
+/* Floating UI */
+#layer-control, #legend {
+  position:absolute;
+  left:280px;
   background:white;
   padding:10px;
   border-radius:6px;
-  font-family:sans-serif;
   box-shadow:0 0 5px rgba(0,0,0,0.3);
 }
 
-#layer-control label{
-  display:block;
+#layer-control { top:10px; }
+#legend { bottom:20px; }
+
+.legend-row{
+  display:flex;
+  align-items:center;
   margin-bottom:4px;
+}
+.legend-color{
+  width:18px;
+  height:18px;
+  margin-right:6px;
 }
 </style>
 </head>
+
 <body>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <h3>BikewaySim Framework Maps</h3>
+  <button class="map-btn" data-map="origin_impedance_change">Origin Weighted Impedance Change by TAZ</button>
+  <button class="map-btn" data-map="impedance_contribution">Impedance Contribution</button>
+  <button class="map-btn" data-map="lbc">Link Betweenness Centrality</button>
+
+  <hr>
+  <div id="map-description"></div>
+</div>
+
+<button id="toggle-btn">⬅</button>
 
 <div id="map"></div>
 
-<div id="layer-control">
-  <b>Layers</b><br>
-  <label><input type="checkbox" data-layer="origin_weighted_impedance_change" checked> Impedance Change</label>
-  <label><input type="checkbox" data-layer="impedance_contribution" checked> Impedance Contribution</label>
-  <label><input type="checkbox" data-layer="improvements" checked> Improvements</label>
-  <label><input type="checkbox" data-layer="current_network" checked> Current Network</label>
-</div>
+<!-- FLOATING UI -->
+<div id="layer-control"></div>
+<div id="legend"></div>
 
 <script>
-
-// Register PMTiles protocol
+// =======================
+// PMTiles
+// =======================
 const protocol = new pmtiles.Protocol();
 maplibregl.addProtocol("pmtiles", protocol.tile);
 
-// Initialize MapLibre map
+// =======================
+// MAP INIT
+// =======================
 const map = new maplibregl.Map({
-  container: "map",
-  center: [-84.3658, 33.7624],
-  zoom: 14,
-  style: {
-    version: 8,
-    sources: {
-      // osm: {
-      //   type: "raster",
-      //   tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      //   tileSize: 256
-      // },
-      carto: {
-        type: "raster",
-        tiles: [
-          "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-          "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-          "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-          "https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
-        ],
-        tileSize: 256,
-        attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+  container:"map",
+  center:[-84.3658,33.7624],
+  zoom:12,
+  minZoom:12,
+  maxZoom:16,
+  style:{
+    version:8,
+    sources:{
+      base:{
+        type:"raster",
+        tiles:["https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"],
+        tileSize:256
       },
-      current_network_tiles: {
-        type: "vector",
-        url: "pmtiles://current_network.pmtiles"
-      },
-      impedance_contribution_tiles: {
-        type: "vector",
-        url: "pmtiles://impedance_contribution.pmtiles"
-      },
-      improvements_tiles: {
-        type: "vector",
-        url: "pmtiles://improvements.pmtiles"
-      },
-      origin_weighted_impedance_change_tiles: {
-        type: "vector",
-        url: "pmtiles://origin_weighted_impedance_change.pmtiles"
-      },
+      data:{
+        type:"vector",
+        url:"pmtiles://merged.pmtiles"
+      }
     },
+    layers:[
+      { id:"base", type:"raster", source:"base" },
 
-    layers: [
-      // { id: "osm", type: "raster", source: "osm" },
-      { id: "carto", type: "raster", source: "carto" },
-      
+      // POLYGON LAYER (hidden by default)
       {
-        id: "origin_weighted_impedance_change",
-        type: "fill",
-        source: "origin_weighted_impedance_change_tiles",
-        "source-layer": "origin_weighted_impedance_change",
-        paint: { "fill-color": "#FF6600", "fill-opacity": 0.3 }
-      },
-      
-      {
-        id: "impedance_contribution",
-        type: "line",
-        source: "impedance_contribution_tiles",
-        "source-layer": "impedance_contribution",
-        paint: {
-          "line-color": "#0000FF",
-          "line-width": 0.5
-        }
-      },
-      
-      {
-        id: "improvements",
-        type: "line",
-        source: "improvements_tiles",
-        "source-layer": "improvements",
-        paint: {
-          "line-color": "#00AA00",
-          "line-width": 1.5
+        id:"origin_weighted_impedance_change",
+        type:"fill",
+        source:"data",
+        "source-layer":"taz_polygons",
+        layout: { visibility: 'none' },
+        paint:{
+          "fill-color":[
+            "match",
+            ["get","jenks_class"],
+            0,"#f7fbff",
+            1,"#c6dbef",
+            2,"#6baed6",
+            3,"#2171b5",
+            4,"#08306b",
+            "#cccccc"
+          ],
+          "fill-opacity":0.7
         },
       },
-        
-      {
-        id: "current_network",
-        type: "line",
-        source: "current_network_tiles",
-        "source-layer": "current_network",
-        paint: { "line-color": "#000000", "line-width": 0.5 }
-      }
 
+      // LINE LAYERS (hidden by default)
+      {
+        id:"lbc",
+        type:"line",
+        source:"data",
+        "source-layer":"comb_framework_network_data",
+        layout: { visibility: 'none' },
+        paint:{ "line-color":"#2171b5","line-width":2 }
+      },
+
+      {
+        id:"impedance_contribution_lyr",
+        type:"line",
+        source:"data",
+        "source-layer":"impedance_contribution",
+        layout: { visibility: 'none' },
+        paint:{
+          "line-color":"#00ff00",
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["get","undirected_impedance_contribution_per_mi"],
+            199286.30, 1,
+            34138061.46, 50,
+          ]
+        }
+      }
     ]
   }
 });
 
+// =======================
+// MAP CONFIGS
+// =======================
+const MAP_CONFIGS = {
 
-// --------------------
-// Layer Toggle Control
-// --------------------
+  origin_impedance_change: {
+    description: `This map shows impedance changes across the network.`,
+    layers: ["origin_weighted_impedance_change"],
+    controls: [
+      { id:"origin_weighted_impedance_change", label:"Origin Weighted Impedance Change by TAZ" }
+    ],
+    legend: `
+      <b>Impedance Change</b>
+      <div class="legend-row"><div class="legend-color" style="background:#f7fbff"></div>Class 1</div>
+      <div class="legend-row"><div class="legend-color" style="background:#c6dbef"></div>Class 2</div>
+      <div class="legend-row"><div class="legend-color" style="background:#6baed6"></div>Class 3</div>
+      <div class="legend-row"><div class="legend-color" style="background:#2171b5"></div>Class 4</div>
+      <div class="legend-row"><div class="legend-color" style="background:#08306b"></div>Class 5</div>
+    `
+  },
 
-const layerControl = document.getElementById("layer-control");
+  impedance_contribution: {
+    description: `This map shows how each improvement reduces impedance`,
+    layers: ["impedance_contribution_lyr"],
+    controls: [
+      { id:"impedance_contribution_lyr", label:"Impedance Contribution" }
+    ],
+    legend: `
+      <b>Impedance</b>
+      <div class="legend-row">
+        <div class="legend-color" style="background:#2171b5"></div>
+        Testing
+      </div>
+    `
+  },
 
-layerControl.addEventListener("change", (e) => {
+  lbc: {
+    description: `Link Betweenness Centrality.`,
+    layers: ["lbc"],
+    controls: [
+      { id:"lbc", label:"Link Betweenness Centrality" }
+    ],
+    legend: null
+  }
 
-  if (!e.target.dataset.layer) return;
+};
 
-  const layerId = e.target.dataset.layer;
+// =======================
+// BUILD LAYER CONTROL
+// =======================
+function buildLayerControl(config){
+  const container = document.getElementById("layer-control");
+  container.innerHTML = "<b>Layers</b><br>" +
+    config.controls.map(l => `
+      <label>
+        <input type="checkbox" data-layer="${l.id}" checked>
+        ${l.label}
+      </label><br>
+    `).join("");
 
-  const visibility = e.target.checked ? "visible" : "none";
+  container.querySelectorAll("[data-layer]").forEach(input=>{
+    input.addEventListener("change",(e)=>{
+      const id = e.target.dataset.layer;
+      map.setLayoutProperty(id, "visibility", e.target.checked ? "visible":"none");
+    });
+  });
+}
 
-  map.setLayoutProperty(layerId, "visibility", visibility);
+// =======================
+// BUILD LEGEND
+// =======================
+function buildLegend(config){
+  const el = document.getElementById("legend");
+  if(!config.legend){
+    el.style.display = "none";
+    return;
+  }
+  el.style.display = "block";
+  el.innerHTML = config.legend;
+}
 
+// =======================
+// SWITCH MAP
+// =======================
+function switchMap(name){
+  const config = MAP_CONFIGS[name];
+
+  // hide all layers
+  Object.values(MAP_CONFIGS).forEach(cfg=>{
+    cfg.layers.forEach(id=>{
+      if(map.getLayer(id)){
+        map.setLayoutProperty(id,"visibility","none");
+      }
+    });
+  });
+
+  // show selected layers
+  config.layers.forEach(id=>{
+    if(map.getLayer(id)){
+      map.setLayoutProperty(id,"visibility","visible");
+    }
+  });
+
+  // update UI
+  document.getElementById("map-description").innerHTML = config.description;
+
+  buildLayerControl(config);
+  buildLegend(config);
+}
+
+// =======================
+// SIDEBAR EVENTS
+// =======================
+document.querySelectorAll(".map-btn").forEach(btn=>{
+  btn.onclick = ()=> switchMap(btn.dataset.map);
 });
 
+// =======================
+// TOGGLE SIDEBAR
+// =======================
+const sidebar = document.getElementById("sidebar");
+const toggleBtn = document.getElementById("toggle-btn");
 
-// --------------------
-// Popups
-// --------------------
+toggleBtn.onclick = () => {
+  sidebar.classList.toggle("collapsed");
+  const isCollapsed = sidebar.classList.contains("collapsed");
+  toggleBtn.textContent = isCollapsed ? "➡" : "⬅";
+  const offset = isCollapsed ? 20 : 280;
+  document.getElementById("layer-control").style.left = offset + "px";
+  document.getElementById("legend").style.left = offset + "px";
+  setTimeout(() => map.resize(), 310);
+};
 
-map.on("click", "origin_weighted_impedance_change", (e) => {
-  const props = e.features[0].properties;
-  new maplibregl.Popup()
-    .setLngLat(e.lngLat)
-    .setHTML(
-      `<b>TAZ:</b> ${props.tazid}<br>` +
-      `<b>Impedance Change:</b> ${props.impedance_change}<br>` +
-      `<b>FID:</b> ${props.fid}`
-    )
-    .addTo(map);
+// =======================
+// INIT (no map shown until user clicks)
+map.on("load",()=>{
+  // nothing visible by default; user chooses map
 });
-
-map.on("click", "current_network", (e) => {
-  const props = e.features[0].properties;
-  new maplibregl.Popup()
-    .setLngLat(e.lngLat)
-    .setHTML(
-      `<b>Link ID:</b> ${props.linkid}<br>` +
-      `<b>Travel Time (min):</b> ${props.travel_time_min}<br>`
-    )
-    .addTo(map);
-});
-
 </script>
 
 </body>
